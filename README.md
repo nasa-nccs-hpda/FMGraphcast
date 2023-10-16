@@ -3,30 +3,24 @@ title: ILAB TEMPLATE - Data Science
 purpose: Template for python projects tailored to scientific applications (e.g., machine learning)
 ---
 
-# ilab-template-python-data-science
+# FMGraphCast
 
-Template for python projects tailored to scientific applications (e.g., machine learning)
+Integration of GraphCast into the ILab Foundation Model Framework
 
-## Objectives
+## Conda Environment Setup
 
-- Establish common structure for similar ILAB projects
+#### Create Base Environment
+    > conda create -n fmgc -c conda-forge 
+    > conda activate fmgc
+    > conda install -c conda-forge numpy xarray dask matplotlib scipy netCDF4 cartopy chex dm-haiku jax jraph pandas rtree tree trimesh typing_extensions 
+    > pip install hydra-core --upgrade
 
-## Containers
+#### Install FMBase
+    > git clone https://github.com/nasa-nccs-cds/FoundationModelBase.git
+    > cd FoundationModelBase
+    > pip install .
 
-### TBD 
-
-## Quickstart
-
-### TBD
-
-## Dataset Generation and Training
-
-### TBD
-
-## Full Data Pipeline Command
-
-### TBD
-
-## Contributors
-
-### TBD
+#### Install GraphCast
+    > git clone https://github.com/google-deepmind/graphcast.git
+    > cd graphcast
+    > pip install .
