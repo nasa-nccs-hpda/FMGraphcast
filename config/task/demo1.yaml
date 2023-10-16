@@ -1,0 +1,7 @@
+input_variables=    # graphcast.TASK.input_variables,
+target_variables=   # graphcast.TASK.target_variables,
+forcing_variables=  # graphcast.TASK.forcing_variables,
+z_levels=    # graphcast.PRESSURE_LEVELS[random_levels.value],
+input_duration=     # graphcast.TASK.input_duration,
+train_steps=
+eval_steps=

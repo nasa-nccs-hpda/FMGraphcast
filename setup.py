@@ -1,8 +1,8 @@
 """Module setuptools script."""
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
-description = ( "Integration of GraphCast into the ILab Foundation Model Framework", )
+description = "Integration of GraphCast into the ILab Foundation Model Framework"
 
 setup(
     name="fmgraphcast",
@@ -13,7 +13,7 @@ setup(
     license="Apache License, Version 2.0",
     keywords="GraphCast Foundation Model",
     url="https://github.com/nasa-nccs-cds/FMGraphcast.git",
-    packages=["fmgraphcast"],
+    packages=find_packages(),
     install_requires=[  "numpy", "xarray", "dask", "matplotlib", "scipy", "netCDF4", "hydra-core", "cartopy", "chex",
                         "colabtools", "dm-haiku", "jax", "jraph", "pandas", "rtree", "tree", "trimesh", "typing_extensions" ],
     classifiers=[
