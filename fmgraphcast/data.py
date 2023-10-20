@@ -72,7 +72,7 @@ class FMGDataManager(MERRA2Base):
 
 
     @classmethod
-    def featurize_progress( cls, name: str, dims: Sequence[str], progress: np.ndarray ) -> Mapping[str, xa.Variable]:
+    def featurize_progress( cls, name: str, dims: Sequence[str], progress: np.ndarray ) -> Mapping[str, xa.DataArray]:
       """Derives features used by ML models from the `progress` variable.
 
       Args:
@@ -90,49 +90,37 @@ class FMGDataManager(MERRA2Base):
           of data dimensions.
       """
       if len(dims) != progress.ndim:
-        raise ValueError(
-            f"Number of feature dimensions ({len(dims)}) must be equal to the"
-            f" number of data dimensions: {progress.ndim}."
-        )
+         raise ValueError( f"Number of feature dimensions ({len(dims)}) must be equal to the number of data dimensions: {progress.ndim}." )
       progress_phase = progress * (2 * np.pi)
       return {
-          name: xa.Variable(dims, progress),
-          name + "_sin": xa.Variable(dims, np.sin(progress_phase)),
-          name + "_cos": xa.Variable(dims, np.cos(progress_phase)),
+          name: xa.DataArray(progress, dims=dims, ),
+          name + "_sin": xa.DataArray( np.sin(progress_phase), dims=dims ),
+          name + "_cos": xa.DataArray( np.cos(progress_phase), dims=dims ),
       }
 
 
-    def add_derived_vars(self, data: xa.Dataset) -> None:
-      """Adds year and day progress features to `data` in place.
-
-      NOTE: `toa_incident_solar_radiation` needs to be computed in this function
-      as well.
-
-      Args:
-        data: Xarray dataset to which derived features will be added.
-
-      Raises:
-        ValueError if `datetime` or `lon` are not in `data` coordinates.
+    def add_derived_vars(self, data: xa.DataArray ) -> Dict[str,xa.DataArray]:
+      """Constructs year and day progress features.
       """
-
-      for coord in ("datetime", "lon"):
-        if coord not in data.coords:
-          raise ValueError(f"'{coord}' must be in `data` coordinates.")
+      longitude_coord = data.coords["x"]
+      time_coord = data.coords["time"]
+      progress_features = {}
 
       # Compute seconds since epoch.
       # Note `data.coords["datetime"].astype("datetime64[s]").astype(np.int64)`
       # does not work as xarrays always cast dates into nanoseconds!
-      seconds_since_epoch = (  data.coords["datetime"].data.astype("datetime64[s]").astype(np.int64)  )
-      batch_dim = ("batch",) if "batch" in data.dims else ()
+      seconds_since_epoch = (  time_coord.data.astype("datetime64[s]").astype(np.int64)  )
 
       # Add year progress features.
-      year_progress = self.get_year_progress(seconds_since_epoch)
-      data.update( self.featurize_progress( name=self.YEAR_PROGRESS, dims=batch_dim + ("time",), progress=year_progress ) )
+      year_progress: np.ndarray = self.get_year_progress(seconds_since_epoch)
+      progress_features.update( self.featurize_progress( name=self.YEAR_PROGRESS, dims= ("time",), progress=year_progress ) )
 
       # Add day progress features.
-      longitude_coord = data.coords["lon"]
-      day_progress =  self.get_day_progress(seconds_since_epoch, longitude_coord.data)
-      data.update( self.featurize_progress( name=self.DAY_PROGRESS, dims=batch_dim + ("time",) + longitude_coord.dims, progress=day_progress ) )
+
+      day_progress: np.ndarray =  self.get_day_progress(seconds_since_epoch, longitude_coord.data)
+      progress_features.update( self.featurize_progress( name=self.DAY_PROGRESS, dims=("time","x"), progress=day_progress ) )
+
+      return progress_features
 
     def extract_input_target_times( self, dataset: xa.Dataset ) -> Tuple[xa.Dataset, xa.Dataset]:
       """Extracts inputs and targets for prediction, from a Dataset with a time dim.
@@ -229,18 +217,14 @@ class FMGDataManager(MERRA2Base):
       return target_lead_times, target_duration
 
 
-    def extract_inputs_targets_forcings( self, dataset: Dict[str,xa.DataArray] ) -> Tuple[xa.Dataset, xa.Dataset, xa.Dataset]:
+    def extract_inputs_targets_forcings( self, data_vars: Dict[str,xa.DataArray] ) -> Tuple[xa.Dataset, xa.Dataset, xa.Dataset]:
       input_vars: List[str] = cfg().task.input_variables
       target_vars: List[str] = cfg().task.target_variables
       forcing_vars: List[str] = cfg().task.forcing_variables
 
-      if not set(forcing_vars).issubset(set(dataset.data_vars)):
-        self.add_derived_vars(dataset)
+      data_vars.update( self.add_derived_vars( data_vars.values()[0] ) )
 
-      # `datetime` is needed by add_derived_vars but breaks autoregressive rollouts.
-      dataset = dataset.drop_vars("datetime")
-
-      inputs, targets = self.extract_input_target_times(dataset)
+      inputs, targets = self.extract_input_target_times( dataset )
 
       if set(forcing_vars) & set(target_vars):
         raise ValueError( f"Forcing variables {forcing_vars} should not overlap with target variables {target_vars}." )
