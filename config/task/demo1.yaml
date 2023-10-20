@@ -1,9 +1,11 @@
-input_variables=    ['T', 'U', 'V',  'H', 'QV', 'SLP', 'FRLAND' ]
-target_variables=   ['T', 'U', 'V',  'H', 'QV', 'SLP' ]
-forcing_variables=  [ 'SWNETTOA' ]
-z_levels=  [ 10, 250, 500, 800, 1000 ]
-input_duration='18h',
-target_lead_times=('3d', '5d')
+input_variables:    ['T', 'U', 'V',  'H', 'QV', 'SLP', 'FRLAND' ]
+target_variables:   ['T', 'U', 'V',  'H', 'QV', 'SLP' ]
+forcing_variables:  [ 'SWNETTOA' ]
+z_levels:           [ 10, 250, 500, 800, 1000 ]
+input_duration:     '18h'
+target_lead_times:  ['3d', '5d']
+year_range:         [2000,2001,1]
+month_range:        [0,4,1]
 
 
 # preprocessed: ['T', 'U', 'V', 'OMEGA', 'H', 'QV','SLP', 'T2M', 'V10M', 'U10M', 'TQI', 'TQL', 'TQV', 'PRECLS', 'SWNETTOA'}

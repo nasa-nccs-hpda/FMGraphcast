@@ -1,8 +1,11 @@
 from typing import Any, Mapping, Sequence, Tuple, Union
+from fmbase.source.merra2.model import MERRA2DataInterface
+from typing import Any, Dict, List, Tuple, Type, Optional, Union
+from  fmbase.source.merra2.base import MERRA2Base
 from fmbase.util.config import cfg
 import pandas as pd
 import numpy as np
-import xarray
+import xarray as xa
 
 TimedeltaLike = Any  # Something convertible to pd.Timedelta.
 TimedeltaStr = str  # A string convertible to pd.Timedelta.
@@ -19,7 +22,7 @@ TargetLeadTimes = Union[TimedeltaLike, Sequence[TimedeltaLike], slice]  # slice 
       final input timestep, and should be positive.
 """
 
-class FMGDataManager:
+class FMGDataManager(MERRA2Base):
     SEC_PER_HOUR = 3600
     HOUR_PER_DAY = 24
     SEC_PER_DAY = SEC_PER_HOUR * HOUR_PER_DAY
@@ -27,6 +30,9 @@ class FMGDataManager:
     AVG_SEC_PER_YEAR = SEC_PER_DAY * AVG_DAY_PER_YEAR
     DAY_PROGRESS = "day_progress"
     YEAR_PROGRESS = "year_progress"
+
+    def __init__(self):
+        MERRA2Base.__init__(self)
 
     @classmethod
     def get_year_progress(cls, seconds_since_epoch: np.ndarray) -> np.ndarray:
@@ -66,7 +72,7 @@ class FMGDataManager:
 
 
     @classmethod
-    def featurize_progress( cls, name: str, dims: Sequence[str], progress: np.ndarray ) -> Mapping[str, xarray.Variable]:
+    def featurize_progress( cls, name: str, dims: Sequence[str], progress: np.ndarray ) -> Mapping[str, xa.Variable]:
       """Derives features used by ML models from the `progress` variable.
 
       Args:
@@ -90,13 +96,13 @@ class FMGDataManager:
         )
       progress_phase = progress * (2 * np.pi)
       return {
-          name: xarray.Variable(dims, progress),
-          name + "_sin": xarray.Variable(dims, np.sin(progress_phase)),
-          name + "_cos": xarray.Variable(dims, np.cos(progress_phase)),
+          name: xa.Variable(dims, progress),
+          name + "_sin": xa.Variable(dims, np.sin(progress_phase)),
+          name + "_cos": xa.Variable(dims, np.cos(progress_phase)),
       }
 
 
-    def add_derived_vars(self, data: xarray.Dataset) -> None:
+    def add_derived_vars(self, data: xa.Dataset) -> None:
       """Adds year and day progress features to `data` in place.
 
       NOTE: `toa_incident_solar_radiation` needs to be computed in this function
@@ -128,7 +134,7 @@ class FMGDataManager:
       day_progress =  self.get_day_progress(seconds_since_epoch, longitude_coord.data)
       data.update( self.featurize_progress( name=self.DAY_PROGRESS, dims=batch_dim + ("time",) + longitude_coord.dims, progress=day_progress ) )
 
-    def extract_input_target_times( self, dataset: xarray.Dataset ) -> Tuple[xarray.Dataset, xarray.Dataset]:
+    def extract_input_target_times( self, dataset: xa.Dataset ) -> Tuple[xa.Dataset, xa.Dataset]:
       """Extracts inputs and targets for prediction, from a Dataset with a time dim.
 
       The input period is assumed to be contiguous (specified by a duration), but
@@ -161,7 +167,7 @@ class FMGDataManager:
         )
 
       Args:
-        dataset: An xarray.Dataset with a 'time' dimension whose coordinates are
+        dataset: An xa.Dataset with a 'time' dimension whose coordinates are
           timedeltas. It's assumed that the time coordinates have a fixed offset /
           time resolution, and that the input_duration and target_lead_times are
           multiples of this.
@@ -223,14 +229,12 @@ class FMGDataManager:
       return target_lead_times, target_duration
 
 
-    def extract_inputs_targets_forcings( self, dataset: xarray.Dataset,  *, input_variables: Tuple[str, ...], target_variables: Tuple[str, ...],
-                                forcing_variables: Tuple[str, ...], pressure_levels: Tuple[int, ...], ) -> Tuple[xarray.Dataset, xarray.Dataset, xarray.Dataset]:
-      """Extracts inputs, targets and forcings according to requirements."""
-      dataset = dataset.sel(level=list(pressure_levels))
+    def extract_inputs_targets_forcings( self, dataset: Dict[str,xa.DataArray] ) -> Tuple[xa.Dataset, xa.Dataset, xa.Dataset]:
+      input_vars: List[str] = cfg().task.input_variables
+      target_vars: List[str] = cfg().task.target_variables
+      forcing_vars: List[str] = cfg().task.forcing_variables
 
-      # "Forcings" are derived variables and do not exist in the original ERA5 or
-      # HRES datasets. Compute them if they are not in `dataset`.
-      if not set(forcing_variables).issubset(set(dataset.data_vars)):
+      if not set(forcing_vars).issubset(set(dataset.data_vars)):
         self.add_derived_vars(dataset)
 
       # `datetime` is needed by add_derived_vars but breaks autoregressive rollouts.
@@ -238,15 +242,31 @@ class FMGDataManager:
 
       inputs, targets = self.extract_input_target_times(dataset)
 
-      if set(forcing_variables) & set(target_variables):
-        raise ValueError(
-            f"Forcing variables {forcing_variables} should not "
-            f"overlap with target variables {target_variables}."
-        )
+      if set(forcing_vars) & set(target_vars):
+        raise ValueError( f"Forcing variables {forcing_vars} should not overlap with target variables {target_vars}." )
 
-      inputs = inputs[list(input_variables)]
+      inputs = inputs[list(input_vars)]
       # The forcing uses the same time coordinates as the target.
-      forcings = targets[list(forcing_variables)]
-      targets = targets[list(target_variables)]
+      forcings = targets[list(forcing_vars)]
+      targets = targets[list(target_vars)]
 
       return inputs, targets, forcings
+
+    def load_training_data(self,**kwargs) -> Tuple[xa.Dataset, xa.Dataset, xa.Dataset]:
+        input_vars: List[str] = cfg().task.input_variables
+        forcing_vars: List[str] = cfg().task.forcing_variables
+        years: List[int] = list(range(*cfg().task.year_range))
+        months: List[int] = list(range(*cfg().task.month_range))
+        varlist: List[str] = input_vars + forcing_vars
+        levels: List[float] = list(cfg().task.z_levels)
+        training_data: Dict[str,xa.DataArray] = {}
+
+        for vname in varlist:
+            vslices: List[xa.DataArray] = []
+            for year in years:
+                for month in months:
+                    varray: xa.DataArray = self.load_cache_var( vname, year, month, **kwargs  )
+                    vslices.append( varray.sel(z=levels) )
+            training_data[vname] = xa.concat( vslices, dim="time" )
+
+        return self.extract_inputs_targets_forcings( training_data )
