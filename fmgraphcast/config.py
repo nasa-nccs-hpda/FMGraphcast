@@ -11,10 +11,11 @@ def config_model( **kwargs ) -> ModelConfig:
 	return mc
 
 def config_task( **kwargs) -> TaskConfig:
+	dts = cfg().task.data_timestep
 	tc =  TaskConfig()
 	tc.input_variables=    kwargs.get('input_variables',    cfg().task.input_variables)
 	tc.target_variables=   kwargs.get('target_variables',   cfg().task.target_variables)
 	tc.forcing_variables=  kwargs.get('forcing_variables',  cfg().task.forcing_variables)
 	tc.pressure_levels=    kwargs.get('z_levels',           cfg().task.z_levels)
-	tc.input_duration=     kwargs.get('input_duration',     cfg().task.input_duration)
+	tc.input_duration=     kwargs.get('input_duration',     f"{cfg().task.input_steps*dts}h" )
 	return tc
